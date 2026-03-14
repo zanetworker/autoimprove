@@ -14,6 +14,7 @@ Complete `improve.md` templates for different domains. Use `/autoimprove init --
 | `sql` | Query performance | Execution time in ms | 1-2h |
 | `frontend` | Bundle size | Bundle bytes | 2-4h |
 | `ci` | CI/build speed | Build time in seconds | 2-4h |
+| `automl` | Tabular ML (churn, fraud, scoring) | AUC-ROC, F1, accuracy | 4-8h |
 
 ## perf — Code Performance
 
@@ -306,4 +307,64 @@ What NOT to try:
 - Don't remove type checking
 - Don't change output artifacts
 - Pipeline must remain correct
+```
+
+## automl — Tabular ML (Churn, Fraud, Scoring)
+
+The most common ML task across companies. Unlike traditional AutoML (AutoSklearn, FLAML, AutoGluon) which searches a predefined parameter grid, autoimprove can engineer new features, rewrite preprocessing pipelines, swap models, and combine approaches creatively.
+
+Applies to: churn prediction, fraud detection, credit scoring, lead conversion, demand forecasting, insurance pricing, recommendation ranking, customer lifetime value.
+
+```markdown
+# autoimprove: better-<prediction>-model
+
+## Change
+files: train.py
+context: data/train.csv, data/test.csv, evaluate.py
+
+## Check
+run: python train.py && python evaluate.py
+score: auc_roc: ([\d.]+)
+goal: higher
+timeout: 3m
+
+## Stop
+budget: 4h
+target: 0.95
+stale: 20
+
+## Instructions
+
+Improve AUC-ROC on the holdout test set.
+The training data has structured columns: demographics, usage metrics,
+billing history, support tickets, engagement signals.
+
+Feature engineering to try:
+- Ratio features (e.g., support_tickets / months_active)
+- Rolling aggregates (7d, 30d, 90d windows over usage metrics)
+- Interaction terms between high-importance features
+- Binning continuous variables (tenure buckets, spend tiers)
+- Target encoding for high-cardinality categoricals
+- Recency features (days since last login, last purchase)
+- Trend features (is usage increasing or decreasing?)
+
+Model changes to try:
+- XGBoost, LightGBM, CatBoost — compare all three
+- Hyperparameters: learning_rate, max_depth, n_estimators, subsample, colsample_bytree
+- Class imbalance: scale_pos_weight, SMOTE, undersampling
+- Ensemble: stack top 2-3 models with logistic regression meta-learner
+- Calibration: isotonic or Platt scaling
+
+Preprocessing to try:
+- Missing values: median, mode, or indicator columns
+- Log-transform skewed features
+- Remove highly correlated features (>0.95)
+- Feature selection: drop low-importance features to reduce noise
+
+What NOT to try:
+- Don't modify evaluate.py or the test data
+- Don't use the test set during training (no leakage)
+- Don't add deep learning for tabular data — tree models win here
+- Don't add more than 2 new dependencies
+- Keep the pipeline reproducible (set random seeds)
 ```

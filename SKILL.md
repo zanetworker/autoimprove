@@ -198,6 +198,7 @@ When the user runs `/autoimprove init`, detect the repo type and suggest the rig
 Detection heuristics:
 - `go.mod` or `Cargo.toml` or `Makefile` with benchmark targets → `perf`
 - `train.py` or `*.ipynb` with torch/tensorflow imports → `ml`
+- `train.py` with sklearn/xgboost/lightgbm/catboost imports → `automl`
 - `Dockerfile` → `docker`
 - `*.yaml` with `kind: Deployment` → `k8s`
 - `prompts/` directory or `eval/` with score outputs → `prompt`
@@ -497,3 +498,69 @@ What NOT to try:
 - Don't break lazy loading
 - Don't switch build tools entirely
 ```
+
+### Example 9: Tabular ML / AutoML (Churn, Fraud, Scoring)
+
+This is the most common ML task across companies — predicting outcomes on structured data. Traditional AutoML (AutoSklearn, FLAML, AutoGluon) searches a predefined hyperparameter grid. Autoimprove goes further: it can engineer new features, rewrite preprocessing, swap model architectures, and delete dead code.
+
+```markdown
+# autoimprove: better-churn-model
+
+## Change
+files: train.py
+context: data/train.csv, data/test.csv, evaluate.py
+
+## Check
+run: python train.py && python evaluate.py
+score: auc_roc: ([\d.]+)
+goal: higher
+timeout: 3m
+
+## Stop
+budget: 4h
+target: 0.95
+stale: 20
+
+## Agent
+provider: claude
+model: sonnet
+
+## Instructions
+
+Improve AUC-ROC on the holdout test set for customer churn prediction.
+The training data has ~50 columns: demographics, usage metrics, billing history,
+support tickets, and engagement signals.
+
+Feature engineering to try:
+- Ratio features (e.g., support_tickets / months_active, revenue / logins)
+- Rolling aggregates (7d, 30d, 90d windows over usage metrics)
+- Interaction terms between high-importance features
+- Binning continuous variables (tenure buckets, spend tiers)
+- Target encoding for high-cardinality categoricals
+- Recency features (days since last login, last purchase, last support ticket)
+- Trend features (is usage increasing or decreasing over time?)
+
+Model changes to try:
+- XGBoost, LightGBM, CatBoost — compare all three
+- Hyperparameters: learning_rate, max_depth, n_estimators, subsample, colsample_bytree
+- Class imbalance handling: scale_pos_weight, SMOTE, undersampling
+- Ensemble: stack top 2-3 models with a logistic regression meta-learner
+- Calibration: isotonic or Platt scaling for probability calibration
+
+Preprocessing to try:
+- Handle missing values: median, mode, or indicator columns
+- Log-transform skewed features
+- Remove highly correlated features (>0.95 correlation)
+- Feature selection: drop low-importance features to reduce noise
+
+What NOT to try:
+- Don't modify evaluate.py or the test data
+- Don't use the test set during training (no leakage)
+- Don't add deep learning — this is tabular data, tree models win here
+- Don't add more than 2 new dependencies
+- Keep the pipeline reproducible (set random seeds)
+```
+
+This example works for any tabular prediction task — swap "churn" for fraud detection,
+credit scoring, lead conversion, demand forecasting, or insurance pricing. The structure
+is the same: features in columns, a target to predict, a metric to maximize.
