@@ -88,51 +88,105 @@ This is a separate pre-loop phase. It generates the test suite needed for safe o
 
 #### Bootstrap Protocol
 
-1. **Analyze**: Read all files in `Change.files`. Identify:
+1. **Analyze**: Read all files in `Change.files` AND the `improve.md`. Identify:
+   - The optimization goal (`Check.goal`) and what the agent will be chasing
    - Public API surface (exported functions, methods, classes)
    - Critical code paths (hot loops, core logic, data transformations)
    - Edge cases (nil/null handling, empty inputs, boundary values)
    - Existing test coverage (check `Check.test-files` if specified)
 
-2. **Gap analysis**: Report what's tested and what's not. Categorize gaps:
-   - **Correctness tests** (required): Does the code produce the right output?
-   - **Regression tests** (required): Will the agent know if it breaks something?
-   - **Property tests** (nice to have): Invariants that should hold across any change
-   - **Benchmark tests** (if applicable): Baselines for performance claims
+2. **Goal-aware threat modeling**: The optimization goal predicts what the agent will try, which predicts what it will break. Generate tests that guard against the failure modes of THAT specific goal:
 
-3. **Generate** (when `--generate` is passed):
+   **When goal = faster (lower latency, fewer allocations):**
+   The agent will skip work, take shortcuts, and remove safety checks.
+   - Unicode/multibyte input still works (fast paths assume ASCII)
+   - Empty, nil, zero-length inputs don't crash (nil checks removed for speed)
+   - Error messages are still correct and informative (error formatting skipped)
+   - Concurrent access is safe (locks removed for throughput)
+   - Large inputs don't OOM or hang (buffer reuse may break on edge sizes)
+   - Output is bit-for-bit identical to baseline (fast path might truncate or round)
+
+   **When goal = smaller (image size, bundle size):**
+   The agent will remove things, strip features, and swap dependencies.
+   - All features still work at runtime (removed code might have been needed)
+   - Lazy-loaded routes/components still render (code splitting may break references)
+   - Runtime dependencies are present (dev deps removed, but some were runtime)
+   - Static assets still load (paths may change with restructuring)
+   - App starts successfully and passes health checks
+
+   **When goal = higher accuracy (ML, prompt quality):**
+   The agent will overfit, leak data, and add complexity.
+   - No test/validation data leaks into training (train/test split integrity)
+   - Pipeline is reproducible with fixed seeds (randomness controlled)
+   - Missing values, outliers, and edge inputs handled correctly
+   - Model outputs are valid (probabilities sum to 1, no NaN predictions)
+   - Feature engineering doesn't introduce future data leakage (no lookahead)
+   - Predictions work on single samples, not just batches
+
+   **When goal = lower cost (infra, compute):**
+   The agent will downsize, reduce redundancy, and cut resources.
+   - Service still handles expected load (reduced replicas may not suffice)
+   - Failover still works (redundancy removed)
+   - Latency stays within acceptable bounds (smaller instances = slower)
+   - Health checks pass under load, not just at idle
+   - Data durability unchanged (storage reductions may lose backups)
+
+   **When goal = higher score (prompt engineering, config tuning):**
+   The agent will game the metric and overfit to the eval set.
+   - Output format is consistent (not just correct for eval cases)
+   - Edge inputs produce reasonable output (not just golden set inputs)
+   - Output length/verbosity stays reasonable (gaming token limits)
+   - No hardcoded responses for known eval cases
+
+3. **Gap analysis**: Cross-reference existing tests with the goal-aware threat model:
+   - **Critical gaps**: Failure modes with NO test coverage — these must be filled
+   - **Weak coverage**: Tests exist but don't cover edge cases for this goal
+   - **Sufficient**: Already tested well for this optimization direction
+
+4. **Generate** (when `--generate` is passed):
    - Write test files to the paths specified in `Check.test-files`
+   - Prioritize tests for critical gaps first, weak coverage second
    - Run the tests to confirm they pass on the current unmodified code
    - If any test fails, fix it — tests must pass on the CURRENT code before optimization
-   - Present the generated tests for review
+   - Present the generated tests for review, grouped by threat category
 
-4. **Commit**: After human review, commit the test files:
-   `git commit -m "autoimprove bootstrap: add test suite for optimization safety"`
+5. **Commit**: After human review, commit the test files:
+   `git commit -m "autoimprove bootstrap: add goal-aware test suite for <goal> optimization"`
 
-5. **Report**: Print a readiness summary:
+6. **Report**: Print a readiness summary:
    ```
    Bootstrap complete.
+     Goal: faster (lower is better)
+     Threat model: shortcut breakage, edge case skipping, safety check removal
      Test files: test/variable_test.rb, test/parser_test.rb
      Tests: 47 passing
-     Coverage: public API 100%, edge cases 85%, properties 3
+       Output equivalence: 12
+       Edge cases (unicode, nil, empty): 15
+       Error handling: 8
+       Concurrency safety: 5
+       API contracts: 7
      Ready for: /autoimprove
    ```
 
 #### What makes a good test suite for autoimprove
 
-The tests don't need to be exhaustive — they need to catch the kinds of breakage
-an optimization agent is likely to introduce:
+The tests don't need to be exhaustive — they need to catch the specific kinds of breakage
+that an agent chasing YOUR optimization goal is likely to introduce.
 
-- **Output equivalence**: Same input produces same output (the agent might change internals)
-- **Error handling**: Errors still raised correctly (the agent might remove safety checks for speed)
-- **Edge cases**: Empty, nil, very large, unicode, special characters (fast paths often skip these)
-- **API contracts**: Public method signatures, return types, side effects unchanged
-- **Concurrency safety**: If applicable, thread-safety invariants hold
+The key insight: **the goal tells you what the agent will try, and that tells you what to test.**
+
+Tests SHOULD:
+- Guard against the failure modes predicted by the goal (see threat model above)
+- Verify output equivalence: same input produces same output regardless of internals
+- Cover edge cases the agent's fast paths will skip: empty, nil, unicode, huge, concurrent
+- Assert on API contracts: signatures, return types, side effects
+- Be fast — slow tests make the loop slower and waste experiment budget
 
 Tests should NOT:
 - Assert on performance (that's what the score is for)
 - Assert on internal implementation details (the agent SHOULD change those)
 - Be flaky or timing-dependent (false failures poison the loop)
+- Be so numerous they dominate experiment time (keep test suite under 30s)
 
 ### Step 3: Baseline
 
