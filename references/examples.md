@@ -15,6 +15,7 @@ Complete `improve.md` templates for different domains. Use `/autoimprove init --
 | `frontend` | Bundle size | Bundle bytes | 2-4h |
 | `ci` | CI/build speed | Build time in seconds | 2-4h |
 | `automl` | Tabular ML (churn, fraud, scoring) | AUC-ROC, F1, accuracy | 4-8h |
+| `rag` | RAG pipeline (retrieval + generation) | Answer relevancy, faithfulness, RAGAS | 4-8h |
 
 ## perf — Code Performance
 
@@ -368,3 +369,82 @@ What NOT to try:
 - Don't add more than 2 new dependencies
 - Keep the pipeline reproducible (set random seeds)
 ```
+
+## rag — RAG Pipeline Optimization
+
+RAG pipelines have many interacting knobs — chunking, embedding, retrieval, reranking,
+prompt template, context window management. Small changes compound: better chunking
+improves retrieval which improves generation quality. Autoimprove can explore this
+combinatorial space much faster than manual tuning.
+
+Applies to: internal knowledge bases, customer support bots, documentation search,
+legal document retrieval, code search, research assistants, enterprise Q&A.
+
+```markdown
+# autoimprove: better-rag-answers
+
+## Change
+scope: the RAG pipeline — chunking, retrieval, and generation
+exclude: data/, eval/
+
+## Check
+test: python -m pytest tests/test_pipeline.py -x
+test-files: tests/
+run: python eval/run_eval.py
+score: answer_relevancy: ([\d.]+)
+goal: higher
+timeout: 5m
+
+## Stop
+budget: 6h
+target: 0.92
+stale: 15
+
+## Instructions
+
+Improve answer relevancy on the evaluation set of 50 question-answer pairs.
+
+Chunking strategies to try:
+- Vary chunk size (256, 512, 1024, 2048 tokens) and overlap (50, 100, 200)
+- Semantic chunking — split on topic boundaries instead of fixed token counts
+- Hierarchical chunking — parent chunks for context, child chunks for retrieval
+- Document-aware splitting — respect headers, paragraphs, code blocks, tables
+- Sentence-level chunking with sliding window for dense passages
+
+Retrieval strategies to try:
+- Adjust top-k (3, 5, 10, 15)
+- Hybrid search — combine dense (embedding) and sparse (BM25) retrieval
+- Add a cross-encoder reranker after initial retrieval
+- Query expansion — rephrase the query multiple ways, merge results
+- Query decomposition — split complex questions into sub-questions
+- MMR (Maximal Marginal Relevance) — diversify retrieved chunks
+
+Embedding changes to try:
+- Switch embedding model (nomic-embed, bge-large, e5-mistral, cohere-embed-v3)
+- Instruction-prefixed embeddings
+- Normalize embeddings for cosine similarity
+
+Generation prompt to try:
+- Structured context presentation (numbered sources with metadata)
+- Chain-of-thought before answering
+- Citation-required format ("Answer based on sources. Cite [Source N].")
+- "If context doesn't contain the answer, say so" (reduce hallucination)
+- Concise vs. detailed instruction tuning
+
+Context window management to try:
+- Reorder chunks — most relevant first vs. most relevant in the middle
+- Compress context — summarize long chunks before passing to LLM
+- Dynamic context sizing — more chunks for complex questions
+- Deduplication — remove near-duplicate chunks
+
+What NOT to try:
+- Don't modify the evaluation script or golden answers
+- Don't change the LLM used for generation (separate variable)
+- Don't add more than 3 new dependencies
+- Don't switch to a different document corpus
+- Keep inference cost per query reasonable
+```
+
+Swap the metric based on what matters most: `faithfulness` to reduce hallucination,
+`context_precision` to improve retrieval accuracy, or a composite RAGAS score for
+overall pipeline quality.

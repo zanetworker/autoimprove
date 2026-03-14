@@ -338,6 +338,7 @@ Detection heuristics:
 - `go.mod` or `Cargo.toml` or `Makefile` with benchmark targets → `perf`
 - `train.py` or `*.ipynb` with torch/tensorflow imports → `ml`
 - `train.py` with sklearn/xgboost/lightgbm/catboost imports → `automl`
+- Python files with langchain/llama_index/chromadb/pinecone/weaviate/qdrant imports → `rag`
 - `Dockerfile` → `docker`
 - `*.yaml` with `kind: Deployment` → `k8s`
 - `prompts/` directory or `eval/` with score outputs → `prompt`
@@ -704,3 +705,89 @@ What NOT to try:
 This example works for any tabular prediction task — swap "churn" for fraud detection,
 credit scoring, lead conversion, demand forecasting, or insurance pricing. The structure
 is the same: features in columns, a target to predict, a metric to maximize.
+
+### Example 10: RAG Pipeline Optimization
+
+RAG (Retrieval-Augmented Generation) pipelines have many interacting knobs — chunking,
+embedding, retrieval, reranking, prompt template, context window management. Small
+changes compound: better chunking improves retrieval which improves generation quality.
+Autoimprove can explore this space much faster than manual tuning.
+
+```markdown
+# autoimprove: better-rag-answers
+
+## Change
+scope: the RAG pipeline — chunking, retrieval, and generation
+exclude: data/, eval/
+
+## Check
+test: python -m pytest tests/test_pipeline.py -x
+test-files: tests/
+run: python eval/run_eval.py
+score: answer_relevancy: ([\d.]+)
+goal: higher
+timeout: 5m
+
+## Stop
+budget: 6h
+target: 0.92
+stale: 15
+
+## Agent
+provider: claude
+model: sonnet
+
+## Instructions
+
+Improve answer relevancy on the evaluation set of 50 question-answer pairs.
+The pipeline currently uses LangChain with a vector store, but you can
+restructure it however you want.
+
+Chunking strategies to try:
+- Vary chunk size (256, 512, 1024, 2048 tokens) and overlap (50, 100, 200)
+- Semantic chunking — split on topic boundaries instead of fixed token counts
+- Hierarchical chunking — parent chunks for context, child chunks for retrieval
+- Document-aware splitting — respect headers, paragraphs, code blocks, tables
+- Sentence-level chunking with sliding window for dense passages
+
+Retrieval strategies to try:
+- Increase or decrease top-k (3, 5, 10, 15)
+- Hybrid search — combine dense (embedding) and sparse (BM25) retrieval
+- Reranking — add a cross-encoder reranker after initial retrieval
+- Query expansion — rephrase the query multiple ways, merge results
+- Query decomposition — split complex questions into sub-questions
+- Metadata filtering — use document metadata to narrow the search space
+- MMR (Maximal Marginal Relevance) — diversify retrieved chunks
+
+Embedding changes to try:
+- Switch embedding model (nomic-embed, bge-large, e5-mistral, cohere-embed-v3)
+- Fine-tune embedding on domain-specific data if training pairs available
+- Normalize embeddings for cosine similarity
+- Instruction-prefixed embeddings ("Represent this document for retrieval: ...")
+
+Generation prompt to try:
+- Structured context presentation (numbered sources with metadata)
+- Chain-of-thought before answering ("First, let me identify relevant information...")
+- Citation-required format ("Answer based on the sources. Cite [Source N].")
+- Concise vs. detailed instruction tuning
+- System prompt variations for tone, length, and specificity
+- "If the context doesn't contain the answer, say so" (reduce hallucination)
+
+Context window management to try:
+- Reorder chunks — most relevant first vs. most relevant in the middle
+- Compress context — summarize long chunks before passing to LLM
+- Dynamic context sizing — use more chunks for complex questions, fewer for simple
+- Deduplication — remove near-duplicate chunks that waste context space
+
+What NOT to try:
+- Don't modify the evaluation script or golden answers
+- Don't change the LLM used for generation (that's a separate variable)
+- Don't add more than 3 new dependencies
+- Don't download or switch to a different document corpus
+- Keep inference cost per query reasonable — no 5-call chains for a single answer
+```
+
+This works for any RAG system — internal knowledge bases, customer support bots,
+documentation search, legal document retrieval, or code search. The score metric
+can be swapped: use `faithfulness` to reduce hallucination, `context_precision` to
+improve retrieval, or a composite RAGAS score for overall quality.
