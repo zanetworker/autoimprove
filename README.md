@@ -162,6 +162,7 @@ The key insight: **the optimization goal predicts what the agent will break.**
 - Optimizing for **speed**? The agent will skip edge cases and remove safety checks. Bootstrap generates tests for unicode, nil handling, error messages, and concurrency.
 - Optimizing for **smaller size**? The agent will remove things. Bootstrap tests that features still work and runtime deps are present.
 - Optimizing for **ML accuracy**? The agent will overfit. Bootstrap tests for data leakage, reproducibility, and valid predictions.
+- Optimizing for **RAG quality**? The agent will game retrieval or over-stuff context. Bootstrap tests for answer format consistency, hallucination on out-of-scope questions, and handling of empty retrieval results.
 
 Tests are mutable during bootstrap, **immutable during the loop**. Two phases, never mixed.
 
@@ -180,6 +181,7 @@ Scaffold an `improve.md` for your domain:
 /autoimprove init --type sql     # SQL query performance
 /autoimprove init --type frontend  # bundle size
 /autoimprove init --type ci      # build/CI speed
+/autoimprove init --type rag     # RAG pipeline (chunking, retrieval, generation)
 ```
 
 ## Agent-agnostic
