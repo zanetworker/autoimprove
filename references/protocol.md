@@ -10,16 +10,20 @@ You are an autonomous optimization agent. Your job is to improve a measurable sc
 
 1. Read `improve.md` in the current directory
 2. Parse the structured headers to extract:
-   - `Change.files` — the ONLY files you may modify
-   - `Change.context` — files you may read for reference
-   - `Check.run` — the command to evaluate your changes
+   - `Change.scope` — description, paths, or globs of what you may modify
+   - `Change.exclude` — paths you must never touch
+   - `Check.test` — command to verify correctness (must pass for any change to be kept)
+   - `Check.test-files` — test file paths (never modify these during the loop)
+   - `Check.run` — the command to produce the score
    - `Check.score` — how to extract the score from output
    - `Check.goal` — whether lower or higher is better
    - `Check.timeout` — max time per experiment
    - `Stop.*` — when to stop the loop
-3. Create `.autoimprove/` directory and `.autoimprove/experiments/` subdirectory
-4. Run the check command on the unmodified codebase to establish a baseline
-5. Save the baseline score and current git commit SHA to `.autoimprove/baseline.json`
+3. Resolve `Change.scope` to explicit file paths. If it's natural language, scan the codebase and list the files you will modify. Apply `Change.exclude` to filter.
+4. Create `.autoimprove/` directory and `.autoimprove/experiments/` subdirectory
+5. If `Check.test` is specified, run it to confirm tests pass before starting
+6. Run the score command on the unmodified codebase to establish a baseline
+7. Save the baseline score and current git commit SHA to `.autoimprove/baseline.json`
 
 ## Loop
 
@@ -27,27 +31,29 @@ Repeat until a stopping condition is met:
 
 1. **Plan**: Read past experiments from `.autoimprove/experiments/`. Review what worked, what failed, and why. Propose a new change that you have not tried before.
 
-2. **Implement**: Modify ONLY the files listed in `Change.files`. Make a focused, minimal change.
+2. **Implement**: Modify ONLY the files resolved from `Change.scope`. Make a focused, minimal change.
 
 3. **Commit**: `git add <changed files> && git commit -m "autoimprove: <short description>"`
 
-4. **Evaluate**: Run the check command. If it times out, kill it and treat as failure.
+4. **Test**: If `Check.test` is specified, run it. If tests fail: `git reset --hard HEAD~1`, log as "test_failed", continue to next iteration.
 
-5. **Score**: Extract the score from stdout using the extraction method in `Check.score`.
+5. **Evaluate**: Run the score command (`Check.run`). If it times out, kill it and treat as failure.
 
-6. **Decide**:
-   - If the check command failed (non-zero exit or timeout): `git reset --hard HEAD~1`, log as "error"
+6. **Score**: Extract the score from stdout using the extraction method in `Check.score`.
+
+7. **Decide**:
+   - If the score command failed (non-zero exit or timeout): `git reset --hard HEAD~1`, log as "error"
    - If the score improved: keep the commit, update the baseline, log as "kept"
    - If the score did not improve: `git reset --hard HEAD~1`, log as "discarded"
 
-7. **Log**: Save experiment JSON to `.autoimprove/experiments/NNN-slug.json` with this schema:
+8. **Log**: Save experiment JSON to `.autoimprove/experiments/NNN-slug.json` with this schema:
    ```json
    {
      "id": <number>,
      "title": "<short description>",
-     "status": "kept | discarded | error",
+     "status": "kept | discarded | test_failed | error",
      "commit": "<sha if kept, null if discarded>",
-     "score": <number or null if error>,
+     "score": <number or null if error/test_failed>,
      "baseline_score": <number>,
      "delta_pct": <number or null>,
      "duration_s": <number>,
@@ -65,7 +71,8 @@ Repeat until a stopping condition is met:
 
 ## Rules
 
-- NEVER modify files outside `Change.files`
+- NEVER modify files outside the resolved `Change.scope`
+- NEVER modify test files (`Check.test-files`) during the loop
 - NEVER modify the check command, scoring, or evaluation
 - NEVER skip the git commit before evaluating
 - ALWAYS log every experiment including failures

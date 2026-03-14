@@ -34,8 +34,8 @@ A single markdown file — part config, part prompt:
 # autoimprove: <name>
 
 ## Change
-files: <what the agent can modify>
-context: <read-only reference files>
+scope: <natural language description, explicit paths, or globs>
+exclude: <paths to never modify (optional)>
 
 ## Check
 test: <command that verifies correctness — must pass for any experiment to be kept>
@@ -68,13 +68,27 @@ When invoked, follow this protocol exactly:
 
 Read the `improve.md` file. Extract all structured fields from the headers. Everything after `## Instructions` is the domain prompt.
 
-### Step 2: Validate
+### Step 2: Validate and Resolve Scope
 
-Confirm:
-- All files in `Change.files` exist
-- The `Check.run` command is executable
-- Git working tree is clean (no uncommitted changes)
-- If `Check.test` is specified, run it — tests must pass before the loop starts
+1. **Resolve scope**: Read the `Change.scope` field.
+   - If it contains explicit paths or globs (e.g., `src/handlers/*.go`): resolve directly
+   - If it contains natural language (e.g., "the template parsing engine"): scan the codebase, identify matching files, and present them for confirmation:
+     ```
+     Resolved scope "the template parsing engine" to:
+       - lib/liquid/parser.rb
+       - lib/liquid/lexer.rb
+       - lib/liquid/variable.rb
+
+     These are the ONLY files that will be modified. Confirm? [y/n]
+     ```
+   - Apply `Change.exclude` to filter out any paths that should not be touched
+   - Once confirmed, the resolved file list is LOCKED for the entire loop
+
+2. **Validate**:
+   - All resolved files exist
+   - The `Check.run` command is executable
+   - Git working tree is clean (no uncommitted changes)
+   - If `Check.test` is specified, run it — tests must pass before the loop starts
 
 If validation fails, report the issue and stop.
 
@@ -88,7 +102,7 @@ This is a separate pre-loop phase. It generates the test suite needed for safe o
 
 #### Bootstrap Protocol
 
-1. **Analyze**: Read all files in `Change.files` AND the `improve.md`. Identify:
+1. **Analyze**: Read all files in the resolved `Change.scope` AND the `improve.md`. Identify:
    - The optimization goal (`Check.goal`) and what the agent will be chasing
    - Public API surface (exported functions, methods, classes)
    - Critical code paths (hot loops, core logic, data transformations)
@@ -303,7 +317,7 @@ Each experiment is saved as JSON in `.autoimprove/experiments/`:
 ## Rules
 
 <HARD-RULES>
-- NEVER modify files outside the `Change.files` list
+- NEVER modify files outside the resolved `Change.scope`
 - NEVER modify test files during the optimization loop — tests are immutable guardrails
 - NEVER modify the check command or scoring mechanism
 - NEVER skip the git commit before running the check
@@ -349,8 +363,8 @@ The following examples demonstrate how autoimprove applies across domains. Use t
 # autoimprove: faster-checkout-api
 
 ## Change
-files: src/handlers/checkout.go, src/db/queries.go
-context: src/, test/
+scope: the checkout handler and its database queries
+exclude: test/, vendor/
 
 ## Check
 test: go test ./...
@@ -386,8 +400,7 @@ What NOT to try:
 # autoimprove: slim-container
 
 ## Change
-files: Dockerfile
-context: go.mod, cmd/
+scope: Dockerfile
 
 ## Check
 run: docker build -t test . && echo SCORE: $(docker image inspect test --format '{{.Size}}')
@@ -419,8 +432,7 @@ What NOT to try:
 # autoimprove: better-extraction-prompt
 
 ## Change
-files: prompts/extract.txt
-context: eval/golden_set.jsonl
+scope: prompts/extract.txt
 
 ## Check
 run: python eval/run_eval.py --prompt prompts/extract.txt
@@ -455,8 +467,8 @@ What NOT to try:
 # autoimprove: faster-ci
 
 ## Change
-files: .github/workflows/ci.yml, tsconfig.json, webpack.config.js
-context: src/, package.json
+scope: CI workflow and build configuration
+exclude: src/
 
 ## Check
 run: time npm run build 2>&1 | tail -1
@@ -490,8 +502,8 @@ What NOT to try:
 # autoimprove: better-gpt
 
 ## Change
-files: train.py
-context: prepare.py, data/
+scope: train.py
+exclude: prepare.py, data/
 
 ## Check
 run: python train.py
@@ -527,8 +539,8 @@ What NOT to try:
 # autoimprove: fix-oom-crashes
 
 ## Change
-files: k8s/deployments/api.yaml, k8s/deployments/worker.yaml
-context: k8s/
+scope: the API and worker deployment manifests
+exclude: k8s/services/, k8s/ingress/
 
 ## Check
 run: kubectl apply -f k8s/ && sleep 60 && kubectl get pods --no-headers | grep -c Running
@@ -563,8 +575,7 @@ What NOT to try:
 # autoimprove: optimize-dashboard-queries
 
 ## Change
-files: queries/dashboard.sql
-context: schema.sql, indexes.sql
+scope: queries/dashboard.sql
 
 ## Check
 run: psql -f queries/dashboard.sql -c '\timing' 2>&1
@@ -598,8 +609,8 @@ What NOT to try:
 # autoimprove: smaller-bundle
 
 ## Change
-files: src/index.ts, package.json, vite.config.ts
-context: src/
+scope: the entry point, dependencies, and build config
+exclude: src/components/
 
 ## Check
 run: npm run build && echo SCORE: $(stat -f%z dist/index.js)
@@ -634,8 +645,8 @@ This is the most common ML task across companies — predicting outcomes on stru
 # autoimprove: better-churn-model
 
 ## Change
-files: train.py
-context: data/train.csv, data/test.csv, evaluate.py
+scope: the training pipeline
+exclude: data/, evaluate.py
 
 ## Check
 test: python -m pytest tests/ -x
