@@ -8,11 +8,13 @@ Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) 
 
 ```
 You write improve.md     →  Agent reads it
+                         →  Scaffolds eval if needed (eval-init)
                          →  Generates safety tests (bootstrap)
                          →  Establishes baseline score
                          →  LOOP:
-                              Propose change → git commit → run tests
-                              → tests pass? → run benchmark → score improved?
+                              Propose change → git commit (verified)
+                              → run tests → pass? → run benchmark
+                              → check guards → score improved?
                               → yes: keep → no: git reset
                               → log experiment → repeat
                          →  Print summary
@@ -35,6 +37,7 @@ test: go test ./...
 run: go test -bench=. -benchmem
 score: ns/op:\s+([\d.]+)
 goal: lower
+guard: allocs/op: ([\d.]+) < 500
 timeout: 3m
 
 ## Stop
@@ -94,7 +97,7 @@ scope: src/handlers/**/*.go
 
 ### Check — how to measure
 
-Tests and scoring are separated. Tests gate correctness, the score measures improvement:
+Tests, scoring, and guards are separated. Tests gate correctness, the score measures improvement, guards prevent regressions on secondary metrics:
 
 ```markdown
 ## Check
@@ -103,6 +106,8 @@ test-files: test/                      # immutable during loop
 run: go test -bench=. -benchmem       # produces the score
 score: ns/op:\s+([\d.]+)              # how to extract the number
 goal: lower                            # or higher
+guard: allocs/op: ([\d.]+) < 500       # secondary metric that must not regress
+keep_if_equal: true                    # keep bug fixes and simplifications
 timeout: 3m
 ```
 
@@ -111,17 +116,21 @@ Score extraction supports three formats:
 - Regex: `ns/op:\s+([\d.]+)` with a capture group
 - jq: `.results.mean_time` for JSON output
 
+**Guard metrics** protect against improving one metric by tanking another. If the guard threshold is violated, the experiment is discarded regardless of the primary score.
+
+**keep_if_equal** (default: false) keeps changes that don't regress, even if they don't improve the score. Useful for bug fixes, code simplifications, and UX improvements that don't affect the measured metric.
+
 ### Stop — when to quit
 
 ```markdown
 ## Stop
-budget: 4h       # wall-clock time
+budget: 4h       # wall-clock time (starts at first experiment, not during setup)
 rounds: 100      # max experiments
 target: 500      # stop when score reaches this
 stale: 15        # stop after 15 consecutive failures
 ```
 
-Whichever condition hits first.
+Whichever condition hits first. Budget time counts from the first experiment, not from bootstrap or eval setup.
 
 ### Agent — for headless mode
 
@@ -133,22 +142,7 @@ model: sonnet
 
 ### Instructions — domain guidance
 
-Everything after `## Instructions` is free-form. Tell the agent what to try, what to avoid, and any domain knowledge that helps:
-
-```markdown
-## Instructions
-
-Focus on reducing object allocations — GC is 74% of CPU time.
-
-Patterns to try:
-- Fast-path with fallback for common cases
-- Byte-level parsing instead of regex
-- Cache small repeated allocations
-
-What NOT to try:
-- Don't change the public API
-- Don't add dependencies
-```
+Everything after `## Instructions` is free-form. Tell the agent what to try, what to avoid, and any domain knowledge that helps.
 
 ## Bootstrap — test generation
 
@@ -167,6 +161,16 @@ The key insight: **the optimization goal predicts what the agent will break.**
 - Optimizing for **RAG quality**? The agent will game retrieval or over-stuff context. Bootstrap tests for answer format consistency, hallucination on out-of-scope questions, and handling of empty retrieval results.
 
 Tests are mutable during bootstrap, **immutable during the loop**. Two phases, never mixed.
+
+## Eval init — for domains that need a golden set
+
+Some domains have objective metrics (bytes, seconds, pod count). Others need human judgment about what a good result looks like (search relevance, answer quality, prediction accuracy). For the second group, use eval-init:
+
+```bash
+/autoimprove eval-init
+```
+
+This scaffolds an eval script and golden set by running the system with sample inputs, asking you to label the results, and building a test set from your judgments. Needed for: RAG, prompt engineering, AutoML. Not needed for: perf, Docker, frontend, CI, SQL, K8s.
 
 ## Templates
 
@@ -214,7 +218,7 @@ Every experiment is logged to `.autoimprove/experiments/` as structured JSON:
     002-cache-integer-tostring.json
 ```
 
-Each experiment records: what was tried, why, what changed, the score, and whether it was kept or discarded. The agent reads its own history to avoid repeating failed ideas and build on what worked.
+Each experiment records: what was tried, why, what changed, the score, whether it was kept or discarded, and which earlier experiments it supersedes (so the agent doesn't retry obsolete approaches).
 
 ```bash
 # View results outside Claude Code
