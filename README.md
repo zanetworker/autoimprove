@@ -62,7 +62,31 @@ Don't change the public API.
 
 # Headless (overnight)
 claude -p "run /autoimprove on improve.md" --allowedTools bash,read,write,edit
+
+# Validate golden set before starting
+/autoimprove validate
 ```
+
+## Golden set validation
+
+Before the loop starts, autoimprove validates that the evaluation set is correct. This catches impossible expectations, missing data, and broken evals that would waste rounds on phantom failures.
+
+The validator checks:
+1. **Expected data exists**: Session IDs, files, projects referenced in the golden set actually exist in the index
+2. **Expected keywords are findable**: Keywords appear somewhere in the search results, not just in fields the system doesn't index
+3. **Score sanity**: Baseline isn't 0.0 (nothing works) or 1.0 (eval isn't discriminating)
+4. **Error isolation**: Each miss gets a specific diagnosis (no results, wrong project, missing keywords)
+
+Run validation standalone: `/autoimprove validate`
+
+## Experiment classification
+
+Experiments can be classified as **structural** (new code paths, features, algorithms) or **parametric** (tuning numbers, weights, thresholds). The loop handles them differently:
+
+- **Parametric**: Runs autonomously in the loop (implement, commit, check, keep/discard)
+- **Structural**: Proposed as a plan but NOT implemented. Saved to `.autoimprove/proposals/` for human review
+
+Add an `## Experiments` section to your improve.md to enable classification. See the [examples](references/examples.md) for templates.
 
 ## The `improve.md` format
 

@@ -55,6 +55,20 @@ What NOT to try:
 - Don't add external dependencies
 - Don't sacrifice readability for marginal gains (<0.1%)
 - Complexity must pay for itself
+
+## Experiments
+
+### Structural (propose to human first)
+- Switch from string scanning to byte-level lexer
+- Add a two-pass parsing strategy (fast path + fallback)
+- Replace recursive descent with table-driven parser
+- Add memoization cache for repeated subexpressions
+
+### Parametric (autonomous loop)
+- Tune buffer pool size
+- Adjust cache expiration threshold
+- Change initial allocation capacity
+- Tune fast-path character set detection threshold
 ```
 
 ## ml — ML Training
@@ -92,6 +106,21 @@ What NOT to try:
 - Don't add dependencies
 - Simplicity over marginal gains
 - Deleting code for equal results IS an improvement
+
+## Experiments
+
+### Structural (propose to human first)
+- Switch attention mechanism (multi-head to grouped-query)
+- Replace LayerNorm with RMSNorm
+- Add rotary positional embeddings
+- Switch optimizer (Adam to Muon or SOAP)
+
+### Parametric (autonomous loop)
+- Tune learning rate and warmup steps
+- Adjust weight decay coefficient
+- Change gradient clipping threshold
+- Tune dropout rate
+- Adjust batch size
 ```
 
 ## docker — Container Image Size
@@ -127,6 +156,19 @@ What NOT to try:
 - Don't remove runtime dependencies
 - Don't use UPX (breaks debugging and coredumps)
 - The app must still start and pass health checks
+
+## Experiments
+
+### Structural (propose to human first)
+- Switch base image family (debian to alpine/distroless/scratch)
+- Add multi-stage build
+- Switch to a different package manager (apk vs apt)
+
+### Parametric (autonomous loop)
+- Combine RUN layers
+- Remove unused packages from install list
+- Tune .dockerignore entries
+- Reorder COPY instructions for cache efficiency
 ```
 
 ## k8s — Kubernetes Health
@@ -165,6 +207,21 @@ What NOT to try:
 - Don't delete and recreate namespaces
 - Don't modify service mesh config
 - One manifest change per experiment
+
+## Experiments
+
+### Structural (propose to human first)
+- Add init containers for dependency ordering
+- Add pod disruption budgets
+- Switch from Deployment to StatefulSet
+- Add horizontal pod autoscaler
+
+### Parametric (autonomous loop)
+- Adjust memory requests and limits
+- Tune CPU requests and limits
+- Adjust liveness/readiness probe intervals and thresholds
+- Change HPA target utilization percentage
+- Tune replica count
 ```
 
 ## prompt — Prompt Engineering
@@ -203,6 +260,20 @@ What NOT to try:
 - Don't overfit to specific test cases
 - Keep prompt under 2000 tokens
 - Don't use model-specific tricks that break portability
+
+## Experiments
+
+### Structural (propose to human first)
+- Add chain-of-thought reasoning step
+- Switch from single prompt to multi-turn conversation
+- Add a self-verification step (generate then critique)
+- Switch output format (free text to JSON schema)
+
+### Parametric (autonomous loop)
+- Adjust few-shot example count and selection
+- Tune system prompt wording
+- Vary instruction specificity (concise vs detailed)
+- Adjust output length constraints
 ```
 
 ## sql — Query Performance
@@ -238,6 +309,20 @@ What NOT to try:
 - Don't modify schema or indexes
 - Results must be identical (same rows, same order)
 - Don't use database-specific extensions not in the schema
+
+## Experiments
+
+### Structural (propose to human first)
+- Rewrite correlated subquery as a JOIN
+- Replace UNION with UNION ALL where duplicates are impossible
+- Materialize expensive CTE as a temp table
+- Add window functions to replace self-joins
+
+### Parametric (autonomous loop)
+- Reorder WHERE clause predicates for selectivity
+- Adjust LIMIT/OFFSET values
+- Tune date range partition boundaries
+- Adjust aggregate grouping granularity
 ```
 
 ## frontend — Bundle Size
@@ -274,6 +359,20 @@ What NOT to try:
 - Don't break lazy loading
 - Don't switch build tools
 - App must still work in the browser
+
+## Experiments
+
+### Structural (propose to human first)
+- Replace a heavy library with a lighter alternative (moment to dayjs)
+- Add code splitting by route
+- Switch bundler tree-shaking strategy
+- Externalize large dependencies via CDN
+
+### Parametric (autonomous loop)
+- Remove unused imports and exports
+- Adjust chunk size thresholds
+- Tune dynamic import boundaries
+- Adjust minification settings
 ```
 
 ## ci — Build Speed
@@ -310,6 +409,20 @@ What NOT to try:
 - Don't remove type checking
 - Don't change output artifacts
 - Pipeline must remain correct
+
+## Experiments
+
+### Structural (propose to human first)
+- Split test suite into parallel shards
+- Add build artifact caching layer
+- Switch to incremental compilation mode
+- Add conditional steps (skip unchanged paths)
+
+### Parametric (autonomous loop)
+- Adjust parallelism level (concurrent jobs)
+- Tune cache key granularity
+- Adjust timeout values
+- Change retry count for flaky steps
 ```
 
 ## automl — Tabular ML (Churn, Fraud, Scoring)
@@ -370,6 +483,21 @@ What NOT to try:
 - Don't add deep learning for tabular data — tree models win here
 - Don't add more than 2 new dependencies
 - Keep the pipeline reproducible (set random seeds)
+
+## Experiments
+
+### Structural (propose to human first)
+- Switch model family (XGBoost to LightGBM or CatBoost)
+- Add ensemble stacking with meta-learner
+- Add target encoding for categoricals
+- Add rolling aggregate feature engineering pipeline
+
+### Parametric (autonomous loop)
+- Tune learning_rate, max_depth, n_estimators
+- Adjust subsample and colsample_bytree ratios
+- Tune scale_pos_weight for class imbalance
+- Adjust regularization (reg_alpha, reg_lambda)
+- Tune min_child_weight
 ```
 
 ## rag — RAG Pipeline Optimization
@@ -445,6 +573,23 @@ What NOT to try:
 - Don't add more than 3 new dependencies
 - Don't switch to a different document corpus
 - Keep inference cost per query reasonable
+
+## Experiments
+
+### Structural (propose to human first)
+- Add a cross-encoder reranker after initial retrieval
+- Switch from fixed-size to semantic chunking
+- Add query decomposition for complex questions
+- Add hybrid search (combine dense and sparse retrieval)
+- Add hierarchical chunking (parent for context, child for retrieval)
+
+### Parametric (autonomous loop)
+- Adjust chunk size and overlap
+- Tune top-k retrieval count
+- Adjust RRF constant for hybrid search blending
+- Tune reranker score threshold
+- Adjust context window token budget
+- Tune MMR diversity lambda
 ```
 
 Swap the metric based on what matters most: `faithfulness` to reduce hallucination,

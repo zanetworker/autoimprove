@@ -1,11 +1,12 @@
 ---
 name: autoimprove
 description: "Autonomous optimization loop that improves any measurable thing. Point it at files to change, a command to check, and a number to improve — then walk away. Works with any AI agent. Use when the user wants to autonomously optimize code performance, ML training, Docker images, SQL queries, prompts, CI speed, bundle size, Kubernetes configs, or any domain with a measurable score. Triggers include requests like 'optimize this', 'improve performance', 'make this faster', 'reduce allocations', 'autoimprove', 'run the optimization loop', 'let it run overnight', or when the user has an improve.md file."
+compatibility: "Requires git. Language-specific tools depend on the domain: go/python/npm for code, docker for container optimization, kubectl for k8s, psql for SQL. The agent runs whatever commands are in your improve.md Check section."
 ---
 
 # Autoimprove
 
-Autonomous optimization loop. You modify files, run a check, keep improvements, discard regressions, and repeat — no human in the loop.
+Autonomous optimization loop. Two phases: interactive setup (confirms scope, reviews tests, establishes baseline) then headless execution (modify, check, keep or discard, repeat). First runs are always interactive. Only run headless after you've verified the setup works.
 
 ## When to Use
 
@@ -21,6 +22,7 @@ Autonomous optimization loop. You modify files, run a check, keep improvements, 
 | `/autoimprove` | Auto-detect what's needed, set up missing pieces, then run the loop |
 | `/autoimprove <path>` | Same, but use a specific improve.md |
 | `/autoimprove --export` | Generate agent-agnostic `program.md` |
+| `/autoimprove validate` | Run golden set validation only (no loop) |
 
 Individual setup steps can also be run standalone:
 
@@ -31,6 +33,9 @@ Individual setup steps can also be run standalone:
 | `/autoimprove eval-init` | Scaffold eval script and golden set |
 | `/autoimprove bootstrap` | Analyze codebase, generate goal-aware tests |
 | `/autoimprove bootstrap --generate` | Create the test files |
+| `/autoimprove validate` | Validate golden set without starting the loop |
+| `/autoimprove approve <N>` | Approve a structural proposal for implementation |
+| `/autoimprove log` | Show experiment history |
 
 But you don't need to run these separately. `/autoimprove` detects what's missing and walks you through it.
 
@@ -69,6 +74,30 @@ model: <model to use>
 
 <free-form: what to try, what to avoid, domain knowledge>
 ```
+
+### Experiments section (optional)
+
+After `## Instructions`, you can add an `## Experiments` section to classify experiments as structural or parametric. This controls how the loop handles each type:
+
+```markdown
+## Experiments
+
+### Structural (propose to human first)
+- Add UUID detection query routing
+- Add session_id prefix fallback
+- Change FTS5 tokenizer
+
+### Parametric (autonomous loop)
+- Adjust BM25 column weights
+- Tune chunk size (375 words target)
+- Tune per-project diversity limit (max 3)
+```
+
+**Structural experiments** change code paths, add features, or alter algorithms. These require human judgment and are too risky for autonomous execution. The agent PROPOSES them (saves a plan to `.autoimprove/proposals/`) but does NOT implement them. The user reviews and approves before the agent proceeds.
+
+**Parametric experiments** tune numbers, weights, thresholds, and configuration values. These are safe for autonomous execution. The agent implements them in the normal loop.
+
+When the Experiments section is absent, all experiments are treated as parametric (current default behavior).
 
 ## The Loop
 
@@ -110,7 +139,38 @@ Checking readiness...
      → If no: help user write the check command
      → Continue to next check
 
-4. Test suite
+4. Golden set validation (see references/validator.md for full protocol)
+   Run the check command once. For each query in the golden set:
+     a. Verify expected_sessions exist in the index (direct lookup, not search)
+     b. Verify expected_keywords appear in at least one result in the top-20
+     c. Verify expected_projects match results from the correct source
+     d. Classify each miss: no results, wrong project, missing keywords, missing session, timeout, exception
+
+   Report:
+   ```
+   Golden set validation (20 queries):
+     ✓ 17 queries: expectations are satisfiable
+     ⚠ 2 queries: expectations may be wrong
+       - "d941e8ec": expected keywords ["skills", "HPE"] but session summary
+         doesn't contain these — they appear in transcript only
+       - "MCP server gateway authentication": expected project "zanetworker/research"
+         but top-20 results are from "harness/interface"
+     ✗ 1 query: expected session "nonexistent-id" does not exist in index
+
+   Recommendation: Fix the 1 hard failure and review the 2 warnings.
+   ```
+
+   Score sanity check:
+     - 0.0 or 1.0 → eval is likely broken, refuse to start
+     - 0.0-0.15 → very low, flag for review
+     - 0.85-1.0 → very high, limited headroom, flag for review
+
+   Decision:
+     - Any ✗ (hard failures) → refuse to start, user must fix golden set
+     - Any ⚠ (warnings only) → recommend fixing, allow proceeding with confirmation
+     - All ✓ → proceed automatically
+
+5. Test suite
    ✓ Tests pass (16 passed in 2.1s)
    — OR —
    ✗ No test command, or tests fail.
@@ -118,14 +178,18 @@ Checking readiness...
      → Present tests for review, commit them
      → Continue to next check
 
-5. Git state
+6. Git state
    ✓ Working tree is clean
    — OR —
    ✗ Uncommitted changes.
      → "You have uncommitted changes. Commit or stash them before autoimprove can start."
      → This is the one blocker that can't be auto-fixed. Stop and wait.
 
-6. Baseline
+7. Backup
+   → git branch autoimprove-backup-$(date +%Y%m%d-%H%M)
+   → Print: "Backup branch created."
+
+8. Baseline
    ✓ Baseline score: 0.4398 (error rate: 0.0%)
    — OR —
    ✗ Error rate > 20%
@@ -147,6 +211,11 @@ Read the `Change.scope` field:
 - If it contains explicit paths or globs: resolve directly
 - If it contains natural language: scan the codebase, identify matching files, present for confirmation
 - Apply `Change.exclude` to filter
+- Apply default safety excludes (unless explicitly included in scope):
+  - Secrets: `.env`, `.env.*`, `*.pem`, `*.key`, `credentials.*`, `auth.*`, `secrets.*`
+  - Infrastructure: `.git/`, `.autoimprove/`, `node_modules/`, `vendor/`
+  - CI/CD: `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`
+  - Eval artifacts: paths matching `eval/`, `golden_set`, test fixtures
 - Once confirmed, the resolved file list is LOCKED for the entire loop
 
 ### Step 2.5: Bootstrap (when invoked via `/autoimprove bootstrap`)
@@ -385,6 +454,23 @@ WHILE stopping conditions not met:
      - Review past experiments to avoid repeating failures
      - Review past kept experiments to build on what worked
 
+  2.5. Classify the proposed change (if Experiments section exists):
+       - Match the proposal against the Structural and Parametric lists
+       - If no match, classify based on the change nature:
+         new code paths / new features / algorithm changes → structural
+         number tuning / weight adjustment / threshold change → parametric
+
+       IF structural:
+         → Save proposal to `.autoimprove/proposals/NNN-slug.md` with:
+           title, reasoning, files affected, expected impact
+         → Log experiment with `"type": "structural", "status": "proposed"`
+         → Print: "Structural proposal saved: .autoimprove/proposals/NNN-slug.md"
+         → Print: "Approve with `/autoimprove approve NNN`"
+         → CONTINUE to next iteration (do NOT implement)
+
+       IF parametric:
+         → Proceed normally (implement, commit, check, keep/discard)
+
   3. Stage and commit:
      - git add <changed files>
      - git commit -m "autoimprove: <short title>"
@@ -464,6 +550,7 @@ The loop stops when ANY of these is true:
 - Score has reached `target`
 - `stale` consecutive experiments failed to improve
 - Manual interrupt (Ctrl+C or agent termination)
+- **Parametric exhaustion**: All parametric experiments from the Experiments section have been tried (or `stale` consecutive parametric failures). Print: "Parametric experiments exhausted. Structural proposals available in `.autoimprove/proposals/`. Review and approve to continue."
 
 ## Score Extraction
 
@@ -494,8 +581,9 @@ Each experiment is saved as JSON in `.autoimprove/experiments/`:
 ```json
 {
   "id": 1,
+  "type": "parametric",
   "title": "reduce allocations in variable parsing",
-  "status": "kept | kept_equal | discarded | test_failed | guard_failed | error",
+  "status": "kept | kept_equal | discarded | test_failed | guard_failed | error | proposed",
   "commit": "a1b2c3d",
   "score": 0.847,
   "baseline_score": 1.230,
@@ -522,6 +610,18 @@ When an experiment fundamentally replaces the approach from a previous experimen
 ```
 
 When reading past experiments, skip any whose ID appears in a later kept experiment's `supersedes` list. This prevents wasting rounds on variations of discarded approaches.
+
+## Prerequisites and security
+
+**Runtime requirements**: git is required. The check commands in your improve.md determine what else is needed (go, python, npm, docker, kubectl, psql, etc.). Verify these are installed before starting.
+
+**Credentials**: The agent runs arbitrary shell commands from your improve.md. It inherits whatever credentials are available to the process (AWS keys, DB creds, kubeconfigs, API tokens). Run autoimprove with least-privilege credentials. Strip environment variables you don't want the agent to access.
+
+**First run**: Always interactive. The readiness check (Step 1) confirms scope, reviews generated tests, and establishes a baseline before the loop starts. Don't run headless until you've verified one interactive run works correctly.
+
+**Backup**: Before headless runs, the readiness check creates a backup branch automatically. The loop uses git commits and resets for rollback, but the backup branch protects against edge cases.
+
+**Scope enforcement**: The rules below (NEVER modify files outside scope) are policy constraints, not technical enforcement. The agent follows them in practice, but there is no sandbox preventing out-of-scope edits. For sensitive repos, run in a cloned fork or container where damage is reversible.
 
 ## Rules
 
@@ -563,6 +663,46 @@ Detection heuristics:
 For domains that need eval scaffolding (rag, prompt, automl, skill), also suggest running `/autoimprove eval-init` after init. For `image`, eval-init is optional (automated metrics can work without a golden set).
 
 See `references/examples.md` for all templates.
+
+## CLI Mode (Recommended for Headless Runs)
+
+For overnight or unattended optimization, use the standalone CLI instead of the skill. The CLI manages the git loop, score extraction, and stopping conditions deterministically. The agent is called only to propose changes.
+
+```bash
+# Install
+pip install -e .
+
+# Full loop with Claude Code as the agent
+autoimprove run --agent "claude -p" --improve improve.md
+
+# Full loop with Codex as the agent
+autoimprove run --agent "codex -q" --improve improve.md
+
+# Validate golden set only
+autoimprove validate --improve improve.md
+
+# Show experiment history
+autoimprove log
+
+# Approve a structural proposal
+autoimprove approve 3
+
+# Export to agent-agnostic program.md
+autoimprove export --improve improve.md
+```
+
+### CLI vs Skill: When to Use Each
+
+| Aspect | Skill (`/autoimprove`) | CLI (`autoimprove run`) |
+|--------|----------------------|----------------------|
+| Best for | Interactive sessions | Overnight/headless runs |
+| Git operations | Agent runs git | CLI runs git |
+| Score extraction | Agent parses stdout | CLI parses stdout (deterministic) |
+| Stopping conditions | Agent self-monitors | CLI enforces |
+| Experiment logging | Agent writes JSON | CLI writes JSON |
+| Agent's role | Everything | Propose changes only |
+
+The CLI eliminates failures where the agent forgets to commit, misparses a score, or doesn't stop when it should.
 
 ## Export Mode
 
